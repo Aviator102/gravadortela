@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <base href="." />
+  <meta charset="UTF-8" />
+  <title>Gravador de Tela Profissional</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #2a2a2a;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .start-btn {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .stop-btn {
+      background: #f44336;
+      color: white;
+    }
+
+    .pause-btn {
+      background: #ff9800;
+      color: white;
+    }
+
+    .download-btn {
+      background: #2196F3;
+      color: white;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .preview {
+      width: 100%;
+      background: #000;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      min-height: 400px;
+    }
+
+    .settings {
+      background: #333;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .setting-item {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    select, input {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #2a2a2a;
+      color: #fff;
+    }
+
+    .timer {
+      font-size: 24px;
+      text-align: center;
+      margin-bottom: 20px;
+      font-family: monospace;
+    }
+
+    .status {
+      text-align: center;
+      margin-bottom: 10px;
+      font-weight: bold;
+      color: #4CAF50;
+    }
+
+    .recorded-video {
+      margin-top: 20px;
+      width: 100%;
+      border-radius: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Gravador de Tela Profissional</h1>
+    
+    <div class="status">Status: <span id="status">Pronto</span></div>
+    <div class="timer" id="timer">00:00:00</div>
+    
+    <div class="controls">
+      <button class="start-btn" id="startBtn">
+        Iniciar Gravação
+      </button>
+      <button class="pause-btn" id="pauseBtn" disabled>
+        Pausar
+      </button>
+      <button class="stop-btn" id="stopBtn" disabled>
+        Parar
+      </button>
+      <button class="download-btn" id="downloadBtn" disabled>
+        Baixar Gravação
+      </button>
+    </div>
+
+    <div class="settings">
+      <h3>Configurações de Gravação</h3>
+      <div class="settings-grid">
+        <div class="setting-item">
+          <label for="videoQuality">Qualidade do Vídeo</label>
+          <select id="videoQuality">
+            <option value="high">Alta (1080p)</option>
+            <option value="medium">Média (720p)</option>
+            <option value="low">Baixa (480p)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="frameRate">Taxa de Quadros</label>
+          <select id="frameRate">
+            <option value="60">60 FPS</option>
+            <option value="30">30 FPS</option>
+            <option value="24">24 FPS</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="audioSource">Fonte de Áudio</label>
+          <select id="audioSource"></select>
+        </div>
+        <div class="setting-item">
+          <label for="captureMode">Modo de Captura</label>
+          <select id="captureMode">
+            <option value="screen">Tela Inteira</option>
+            <option value="window">Janela Específica</option>
+            <option value="area">Área Selecionada</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <video id="preview" class="preview" autoplay muted></video>
+    <video id="recordedVideo" class="recorded-video" controls></video>
+  </div>
+
+  <script>
+    let mediaRecorder;
+    let recordedChunks = [];
+    let timerInterval;
+    let startTime;
+    let isPaused = false;
+    let recordedBlob = null;
+
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const preview = document.getElementById('preview');
+    const recordedVideo = document.getElementById('recordedVideo');
+    const timer = document.getElementById('timer');
+    const status = document.getElementById('status');
+    const audioSelect = document.getElementById('audioSource');
+    const videoQualitySelect = document.getElementById('videoQuality');
+    const frameRateSelect = document.getElementById('frameRate');
+
+    async function initialize() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioDevices = devices.filter(device => device.kind === 'audioinput');
+        
+        audioDevices.forEach(device => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.text = device.label || `Microfone ${audioSelect.length + 1}`;
+          audioSelect.appendChild(option);
+        });
+      } catch (error) {
+        console.error('Erro ao enumerar dispositivos:', error);
+      }
+    }
+
+    function updateTimer() {
+      if (!startTime || isPaused) return;
+      
+      const elapsed = new Date().getTime() - startTime;
+      const seconds = Math.floor((elapsed / 1000) % 60);
+      const minutes = Math.floor((elapsed / 1000 / 60) % 60);
+      const hours = Math.floor(elapsed / 1000 / 60 / 60);
+
+      timer.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    async function startRecording() {
+      try {
+        recordedChunks = [];
+        const quality = videoQualitySelect.value;
+        const frameRate = parseInt(frameRateSelect.value);
+
+        const videoConstraints = {
+          cursor: 'always',
+          frameRate: frameRate
+        };
+
+        if (quality === 'high') {
+          videoConstraints.width = 1920;
+          videoConstraints.height = 1080;
+        } else if (quality === 'medium') {
+          videoConstraints.width = 1280;
+          videoConstraints.height = 720;
+        } else {
+          videoConstraints.width = 854;
+          videoConstraints.height = 480;
+        }
+
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: videoConstraints,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            deviceId: audioSelect.value
+          }
+        });
+
+        preview.srcObject = stream;
+
+        // Modificação para tentar gravar diretamente em MP4
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'video/mp4' // Tentativa de gravar em MP4
+        });
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(recordedChunks, { type: 'video/mp4' }); // Tentando armazenar em MP4
+          const videoUrl = URL.createObjectURL(recordedBlob);
+          recordedVideo.src = videoUrl;
+          recordedVideo.style.display = 'block';
+          downloadBtn.disabled = false;
+          status.textContent = 'Gravação Concluída';
+        };
+
+        mediaRecorder.start();
+
+        startTime = new Date().getTime();
+        timerInterval = setInterval(updateTimer, 1000);
+
+        startBtn.disabled = true;
+        pauseBtn.disabled = false;
+        stopBtn.disabled = false;
+        status.textContent = 'Gravando...';
+      } catch (err) {
+        console.error('Erro ao iniciar gravação:', err);
+        status.textContent = 'Erro ao iniciar gravação';
+      }
+    }
+
+    function pauseRecording() {
+      mediaRecorder.pause();
+      isPaused = true;
+      pauseBtn.textContent = 'Continuar';
+      status.textContent = 'Pausado';
+    }
+
+    function resumeRecording() {
+      mediaRecorder.resume();
+      isPaused = false;
+      pauseBtn.textContent = 'Pausar';
+      status.textContent = 'Gravando...';
+    }
+
+    function stopRecording() {
+      mediaRecorder.stop();
+      clearInterval(timerInterval);
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      stopBtn.disabled = true;
+      status.textContent = 'Finalizando gravação...';
+    }
+
+    function downloadRecording() {
+      const url = URL.createObjectURL(recordedBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gravacao.mp4';
+      a.click();
+    }
+
+    startBtn.addEventListener('click', startRecording);
+    pauseBtn.addEventListener('click', () => (isPaused ? resumeRecording() : pauseRecording()));
+    stopBtn.addEventListener('click', stopRecording);
+    downloadBtn.addEventListener('click', downloadRecording);
+
+    initialize();
+  </script>
+</body>
+</html>
